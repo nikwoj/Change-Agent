@@ -85,28 +85,46 @@ class Change_Perception(object):
 
         return args
 
-    def __init__(self,):
+    def __init__(self,
+            list_path, checkpoint, vocab_file='vocab', max_length=41, gpu_id=0,
+            result_path='./predict_result', network='segformer-mit_b1',
+            encoder_dim=512, feat_size=16, dropout=.1, n_heads=8, n_layers=3,
+            decoder_n_layers=1, feature_dim=512):
         """
         Training and validation.
         """
-        args = self.define_args()
+        # args = self.define_args()
         self.mean = [0.39073 * 255, 0.38623 * 255, 0.32989 * 255]
         self.std = [0.15329 * 255, 0.14628 * 255, 0.13648 * 255]
 
-        with open(os.path.join(args.list_path + args.vocab_file + '.json'), 'r') as f:
+        # with open(os.path.join(args.list_path + args.vocab_file + '.json'), 'r') as f:
+        #     self.word_vocab = json.load(f)
+        # # Load checkpoint
+        # snapshot_full_path = args.checkpoint
+
+        # checkpoint = torch.load(snapshot_full_path)
+        # self.encoder = Encoder(args.network)
+        # self.encoder_trans = AttentiveEncoder(train_stage=None, n_layers=args.n_layers,
+        #                                  feature_size=[args.feat_size, args.feat_size, args.encoder_dim],
+        #                                  heads=args.n_heads, dropout=args.dropout)
+        # self.decoder = DecoderTransformer(encoder_dim=args.encoder_dim, feature_dim=args.feature_dim,
+        #                              vocab_size=len(self.word_vocab), max_lengths=args.max_length,
+        #                              word_vocab=self.word_vocab, n_head=args.n_heads,
+        #                              n_layers=args.decoder_n_layers, dropout=args.dropout)
+        with open(os.path.join(list_path + vocab_file + '.json'), 'r') as f:
             self.word_vocab = json.load(f)
         # Load checkpoint
-        snapshot_full_path = args.checkpoint
+        snapshot_full_path = checkpoint
 
         checkpoint = torch.load(snapshot_full_path)
-        self.encoder = Encoder(args.network)
-        self.encoder_trans = AttentiveEncoder(train_stage=None, n_layers=args.n_layers,
-                                         feature_size=[args.feat_size, args.feat_size, args.encoder_dim],
-                                         heads=args.n_heads, dropout=args.dropout)
-        self.decoder = DecoderTransformer(encoder_dim=args.encoder_dim, feature_dim=args.feature_dim,
-                                     vocab_size=len(self.word_vocab), max_lengths=args.max_length,
-                                     word_vocab=self.word_vocab, n_head=args.n_heads,
-                                     n_layers=args.decoder_n_layers, dropout=args.dropout)
+        self.encoder = Encoder(network)
+        self.encoder_trans = AttentiveEncoder(train_stage=None, n_layers=n_layers,
+                                         feature_size=[feat_size, feat_size, encoder_dim],
+                                         heads=n_heads, dropout=dropout)
+        self.decoder = DecoderTransformer(encoder_dim=encoder_dim, feature_dim=feature_dim,
+                                     vocab_size=len(self.word_vocab), max_lengths=max_length,
+                                     word_vocab=self.word_vocab, n_head=n_heads,
+                                     n_layers=decoder_n_layers, dropout=dropout)
 
         self.encoder.load_state_dict(checkpoint['encoder_dict'])
         self.encoder_trans.load_state_dict(checkpoint['encoder_trans_dict'], strict=False)
@@ -231,11 +249,15 @@ if __name__ == '__main__':
     parser.add_argument('--imgB_path', default=r'F:/LCY/Change_Agent/Multi_change/predict_result/test_000004_B.png')
     parser.add_argument('--mask_save_path', default=r'./CDmask.png')
 
+    parser.add_argument('--list_path', help='path of the data lists')
+    parser.add_argument('--checkpoint',help='path to checkpoint')
+
+    
     args = parser.parse_args()
 
     imgA_path = args.imgA_path
     imgB_path = args.imgB_path
 
-    Change_Perception = Change_Perception()
+    Change_Perception = Change_Perception(args.list_path, args.checkpoint)
     Change_Perception.generate_change_caption(imgA_path, imgB_path)
     Change_Perception.change_detection(imgA_path, imgB_path, args.mask_save_path)
