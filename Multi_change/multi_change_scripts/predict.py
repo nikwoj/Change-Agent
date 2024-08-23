@@ -19,6 +19,12 @@ from imageio.v2 import imread
 
 # compute_change_map(path_A, path_B)函数: 生成一个掩膜mask用来表示两个图像之间的变化区域
 '''
+python -m multi_change_scripts.predict 
+  --checkpoint /huggingface_cache/hub/LEVIR_CC/BEST_checkpoint_ViT-B_32.pth.tar 
+  --imgA_path /home_data/kj-500_crops/jul_to_aug/xto_09AUG11030840-S3DS-016204838010_01_P001_to_09AUG11030840-S3DS-016204838010_01_P001.png 
+  --imgB_path /home_data/kj-500_crops/jul_to_aug/xto_09JUL14032043-P3DS-016204839010_01_P001_to_09AUG11030840-S3DS-016204838010_01_P001.png 
+  --list_path ./external/Change-Agent/Multi_change/data/LEVIR_MCI/
+
 Args:
     path_A: 图像A的路径
     path_B: 图像B的路径
@@ -115,7 +121,7 @@ class Change_Perception(object):
             self.word_vocab = json.load(f)
         # Load checkpoint
         snapshot_full_path = checkpoint
-
+        # import pdb; pdb.set_trace()
         checkpoint = torch.load(snapshot_full_path)
         self.encoder = Encoder(network)
         self.encoder_trans = AttentiveEncoder(train_stage=None, n_layers=n_layers,
@@ -145,6 +151,20 @@ class Change_Perception(object):
         imgA = np.asarray(imgA, np.float32)
         imgB = np.asarray(imgB, np.float32)
 
+        if len(imgA.shape)==2:
+            imgA = imgA[:,:,None]
+            imgA = np.concatenate([imgA,imgA,imgA],axis=2)
+        if len(imgB.shape)==2:
+            imgB = imgB[:,:,None]
+            imgB = np.concatenate([imgB,imgB,imgB],axis=2)
+
+        if imgA.shape[2] != 3:
+            imgA = imgA[:,:,:3]
+        if imgB.shape[2] != 3:
+            imgB = imgB[:,:,:3]
+            
+
+        # import pdb;pdb.set_trace()
         imgA = imgA.transpose(2, 0, 1)
         imgB = imgB.transpose(2, 0, 1)
         for i in range(len(self.mean)):
@@ -154,8 +174,8 @@ class Change_Perception(object):
             imgB[i, :, :] /= self.std[i]
 
         if imgA.shape[1] != 256 or imgA.shape[2] != 256:
-            imgA = cv2.resize(imgA, (256, 256))
-            imgB = cv2.resize(imgB, (256, 256))
+            imgA = cv2.resize(imgA.transpose(1,2,0), (256, 256)).transpose(2,0,1)
+            imgB = cv2.resize(imgB.transpose(1,2,0), (256, 256)).transpose(2,0,1)
 
         imgA = torch.FloatTensor(imgA)
         imgB = torch.FloatTensor(imgB)
