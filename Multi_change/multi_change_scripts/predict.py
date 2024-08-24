@@ -19,10 +19,10 @@ from imageio.v2 import imread
 
 # compute_change_map(path_A, path_B)函数: 生成一个掩膜mask用来表示两个图像之间的变化区域
 '''
-python -m multi_change_scripts.predict 
-  --checkpoint /huggingface_cache/hub/LEVIR_CC/BEST_checkpoint_ViT-B_32.pth.tar 
-  --imgA_path /home_data/kj-500_crops/jul_to_aug/xto_09AUG11030840-S3DS-016204838010_01_P001_to_09AUG11030840-S3DS-016204838010_01_P001.png 
-  --imgB_path /home_data/kj-500_crops/jul_to_aug/xto_09JUL14032043-P3DS-016204839010_01_P001_to_09AUG11030840-S3DS-016204838010_01_P001.png 
+python -m multi_change_scripts.predict \
+  --checkpoint /huggingface_cache/hub/LEVIR_CC/BEST_checkpoint_ViT-B_32.pth.tar \
+  --imgA_path /home_data/kj-500_crops/jul_to_aug/xto_09AUG11030840-S3DS-016204838010_01_P001_to_09AUG11030840-S3DS-016204838010_01_P001.png \
+  --imgB_path /home_data/kj-500_crops/jul_to_aug/xto_09JUL14032043-P3DS-016204839010_01_P001_to_09AUG11030840-S3DS-016204838010_01_P001.png \
   --list_path ./external/Change-Agent/Multi_change/data/LEVIR_MCI/
 
 Args:
@@ -145,9 +145,14 @@ class Change_Perception(object):
 
 
     def preprocess(self, path_A, path_B):
-
-        imgA = imread(path_A)
-        imgB = imread(path_B)
+        if type(path_A) != np.ndarray:
+            imgA = imread(path_A)
+        else:
+            imgA = path_A
+        if type(path_B) != np.ndarray:
+            imgB = imread(path_B)
+        else:
+            imgB = path_B
         imgA = np.asarray(imgA, np.float32)
         imgB = np.asarray(imgB, np.float32)
 
@@ -185,7 +190,7 @@ class Change_Perception(object):
         return imgA, imgB
 
     def generate_change_caption(self, path_A, path_B):
-        print('model_infer_change_captioning: start')
+        # print('model_infer_change_captioning: start')
         imgA, imgB = self.preprocess(path_A, path_B)
         # Move to GPU, if available
         imgA = imgA.cuda()
@@ -198,13 +203,13 @@ class Change_Perception(object):
         for i in pred_seq:
             pred_caption += (list(self.word_vocab.keys())[i]) + " "
 
-        caption ='there is road change'
+        # caption ='there is road change'
         caption = pred_caption
-        print('change captioning:', caption)
+        # print('change captioning:', caption)
         return caption
 
-    def change_detection(self, path_A, path_B, savepath_mask):
-        print('model_infer_change_detection: start')
+    def change_detection(self, path_A, path_B, savepath_mask=None):
+        # print('model_infer_change_detection: start')
         imgA, imgB = self.preprocess(path_A, path_B)
         # Move to GPU, if available
         imgA = imgA.cuda()
@@ -220,10 +225,11 @@ class Change_Perception(object):
         pred_rgb[pred == 1] = [0, 255, 255]
         pred_rgb[pred == 2] = [0, 0, 255]
 
-        cv2.imwrite(savepath_mask, pred_rgb)
-        print('model_infer: mask saved in', savepath_mask)
+        if type(savepath_mask) != type(None):
+            cv2.imwrite(savepath_mask, pred_rgb)
+        # print('model_infer: mask saved in', savepath_mask)
 
-        print('model_infer_change_detection: end')
+        # print('model_infer_change_detection: end')
         return pred # (256,256,3)
         # return 'change detection successfully. '
 
@@ -261,6 +267,60 @@ class Change_Perception(object):
         return num_str
 
     # design more tool functions:
+    def loop_crops(self, imgA_path, imgB_path, crop_size:int):
+        # Height, Width, Channel
+        imgA = imread(imgA_path)
+        imgB = imread(imgB_path)
+        
+        if len(imgA.shape) != 3:
+            imgA = imgA[:,:,None]
+            imgA = np.concatenate([imgA, imgA, imgA], axis=2)
+        if len(imgB.shape) != 3:
+            imgB = imgB[:,:,None]
+            imgB = np.concatenate([imgB, imgB, imgB], axis=2)
+        
+        if imgA.shape[2] > 3:
+            imgA = imgA[:,:,:3]
+        if imgB.shape[2] > 3:
+            imgB = imgB[:,:,:3]
+        
+        assert imgA.shape == imgB.shape
+        
+        num_crops_y = int(np.ceil(imgA.shape[0] / crop_size))-1
+        num_crops_x = int(np.ceil(imgA.shape[1] / crop_size))-1
+
+        crops_img_A = np.zeros((num_crops_y, num_crops_x, crop_size, crop_size, 3))
+        crops_img_B = np.zeros((num_crops_y, num_crops_x, crop_size, crop_size, 3))
+        crops_captions = {}
+        crops_masks = np.zeros((num_crops_y, num_crops_x, 256, 256))
+        for i in range(num_crops_y):
+            for j in range(num_crops_x):
+                crops_img_A[i,j] = imgA[
+                    i*crop_size:(i+1)*crop_size,
+                    j*crop_size:(j+1)*crop_size
+                ]
+                crops_img_B[i,j] = imgB[
+                    i*crop_size:(i+1)*crop_size,
+                    j*crop_size:(j+1)*crop_size
+                ]
+                crops_captions[(i,j)] = self.generate_change_caption(
+                    crops_img_A[i,j],
+                    crops_img_B[i,j]
+                )
+                crops_masks[i,j] = self.change_detection(
+                    crops_img_A[i,j],
+                    crops_img_B[i,j]
+                )
+        
+        return (
+            crops_img_A.astype(np.uint8),
+            crops_img_B.astype(np.uint8),
+            crops_captions,
+            crops_masks
+        )
+
+
+
 
 
 if __name__ == '__main__':
